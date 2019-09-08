@@ -69,7 +69,7 @@ print_cherrypick_status () {
 	echo \"${STATUS}\"\,\'
 	cat /tmp/cpick-log.txt | sed -e "s/'/''/g"
 	echo \', \'
-	git --no-pager log --format=fuller $CC~1..$CC | sed -e "s/'/''/g"
+	git --no-pager log --stat --format=fuller $CC~1..$CC | sed -e "s/'/''/g"
 	echo \', \'
 	git --no-pager diff $CC~1..$CC | sed -e "s/'/''/g"
 	echo \', \'
@@ -87,7 +87,7 @@ DELAY=$2
    	if [ "$COMMIT_TYPE" == "none" ]; then
 		echo insert into events values\(NULL, $(date +"%s"),
 		echo \"$C\",\"COMMIT-NO-TYPE\", \"\", \"
-		git --no-pager log --format=raw $C~1..$C
+		git --no-pager log --stat --format=raw $C~1..$C
 		echo \",\"
 		git --no-pager diff $C~1..$C
 		echo \"\)\;
@@ -121,7 +121,7 @@ DELAY=$2
 		git checkout $BRANCH_NAME
 
 		echo insert into events values \(NULL, $(date +"%s"), \"$C\", \"$COMMIT_TYPE\", \"BEGIN-CHERRYPICK\",\'
-		git --no-pager log --format=raw $C~1..$C | sed -e "s/'/''/g"
+		git --no-pager log --stat --format=raw $C~1..$C | sed -e "s/'/''/g"
 		echo \',\'
 		git --no-pager diff $C~1..$C | sed -e "s/'/''/g"
 		echo \'\)\;
@@ -151,7 +151,7 @@ DELAY=$2
 			fi
 		done
 		echo insert into events values \(NULL, $(date +"%s"), \"$C\", \"$COMMIT_TYPE\", \"END-CHERRYPICK\",\'
-		git --no-pager log --format=raw $C~1..$C | sed -e "s/'/''/g"
+		git --no-pager log --stat --format=raw $C~1..$C | sed -e "s/'/''/g"
 		echo \',\'
 		git --no-pager diff $C~1..$C | sed -e "s/'/''/g"
 		echo \'\)\;
