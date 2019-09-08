@@ -1,0 +1,5 @@
+#!/bin/bash
+set -eu
+# set -eux
+cat maketables.sql | sqlite3 logdb.sqlite3
+(cat logs/all-log.txt | xargs -n1 -I {} cat logs/{}) | sqlite3 logdb.sqlite3

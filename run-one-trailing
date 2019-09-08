@@ -1,0 +1,155 @@
+#!/bin/bash
+set -eu
+# set -eux
+
+get_commit_type () {
+  	COMMIT=$1
+  	FIX_COMMITS="
+9af7e2e87e6a11fb69309fc9ce4bf8432acbc4e3
+c9122f97398b11f8be0256901a0cbd83dc3b6511
+e41fd65381128642803677a6272f9eb02a46ece6
+c83311ddff9bce2a0e00cd6547c9680192cc3d8c
+91c512913698ebe182c8da1d5d409f42a28dda3b
+16ad61735efbf3f9933fdb9ef7987606ef060cfc
+"
+	FEATURE_COMMITS="
+097fa66b986f06281f603767d321ab13ab6c88c3
+"
+  	HAS_TYPE=$(git --no-pager log ${COMMIT}~1..${COMMIT} | egrep '    Type:|    misc:|    docs:|    maintainers:' | wc -l)
+	COMMIT_TYPE=$(git --no-pager log ${COMMIT}~1..${COMMIT} | egrep '    Type:' | sed -e 's/    Type://g')
+  
+	if [ $HAS_TYPE == 0 ]; then
+		IS_A_FIX=$(echo ${FIX_COMMITS} | grep $COMMIT | wc -l)
+		IS_A_FEATURE=$(echo $FEATURE_COMMITS | grep $COMMIT | wc -l)
+		COMMIT_TYPE=NONE
+		echo IS FIX: ${IS_A_FIX}
+		if [ $IS_A_FIX == 1 ]; then
+			COMMIT_TYPE=fix
+		else
+			if [ $IS_A_FEATURE == 1 ]; then
+				COMMIT_TYPE=feature
+			fi
+		fi
+ 		echo $COMMIT_TYPE
+	else
+		if [ -z $COMMIT_TYPE ]; then
+			COMMIT_TYPE=auto-misc
+		fi
+  		echo $COMMIT_TYPE
+	fi
+}
+
+get_commit_api_type () {
+  COMMIT=$1
+  # we don't count API additions, the deletions are the ones that are harmful
+  API_CHANGES=$(git diff --stat ${COMMIT}~1..${COMMIT} *.api | grep 'deletions' | wc -l)
+  if [ $API_CHANGES == 0 ]; then
+      	  COMMIT_TYPE=$(get_commit_type $COMMIT)
+	  if [ -z "$COMMIT_TYPE" ]; then
+		  echo codeonly
+	  else
+		  if [ "$COMMIT_TYPE" == "feature" ]; then
+		  	echo feature
+		  else
+	  		if [ "$COMMIT_TYPE" == "refactor" ]; then
+				echo refactor 
+			else
+				echo codeonly
+			fi
+		  fi
+	  fi
+  else
+	  echo apichange
+  fi
+}
+
+print_cherrypick_status () {
+	STATUS=$1
+	echo insert into cherrypicks values\(NULL, $(date +"%s"),\"$CC\", \"$BRANCH_NAME\", $DELAY,
+	echo \"${STATUS}\"\,\'
+	cat /tmp/cpick-log.txt | sed -e "s/'/''/g"
+	echo \', \'
+	git --no-pager log --format=fuller $CC~1..$CC | sed -e "s/'/''/g"
+	echo \', \'
+	git --no-pager diff $CC~1..$CC | sed -e "s/'/''/g"
+	echo \', \'
+	git --no-pager diff | sed -e "s/'/''/g"
+	echo \'\)\;
+}
+
+C=$1
+DELAY=$2
+
+# events: now timestamp, cmt varchar, event varchar, branch varchar, text varchar, diff varchar
+# failed_commits: now timestamp, cmt varchar, branch varchar, text varchar
+# ok_commits: now timestamp, cmt, branch
+	COMMIT_TYPE=$(get_commit_api_type $C)
+   	if [ "$COMMIT_TYPE" == "none" ]; then
+		echo insert into events values\(NULL, $(date +"%s"),
+		echo \"$C\",\"COMMIT-NO-TYPE\", \"\", \"
+		git --no-pager log --format=raw $C~1..$C
+		echo \",\"
+		git --no-pager diff $C~1..$C
+		echo \"\)\;
+     		break
+	else
+		TIMELIMIT=$(git log --format=raw $C~1..$C | grep committer | awk '{i=NF-1; j=($i-3600*24*'$DELAY'); printf "%s", j; }')
+		CC_COMMITS=$(git rev-list --reverse --after=$TIMELIMIT $C)
+		START_CC_COMMIT=$(echo ${CC_COMMITS} | awk '{ print $1 }')
+		echo ${CC_COMMITS} 1>&2 
+		git checkout ${START_CC_COMMIT}~1
+		git branch --no-track trailing_${DELAY}_${C}_${START_CC_COMMIT}_nofix $START_CC_COMMIT~1
+		git branch --no-track trailing_${DELAY}_${C}_${START_CC_COMMIT}_allin $START_CC_COMMIT~1
+		CURR_BRANCH="trailing_${DELAY}_${C}_${START_CC_COMMIT}_allin"
+		X=$(git checkout $CURR_BRANCH)
+		echo insert into commits values\(NULL,  $(date +"%s"), \"$C\", \"$COMMIT_TYPE\"\)\;
+
+		for CC in $CC_COMMITS; do
+			# must not fail since it is all in-sequence
+			CHANGES=$(git --no-pager diff ${CC}~1..${CC} | wc -l)
+			echo insert into cherrypicks values\(NULL, $(date +"%s"),\"$CC\", \"$CURR_BRANCH\", 0,
+			if [ $CHANGES -gt 0 ]; then
+				git cherry-pick $CC 2>&1 >/dev/null
+				echo \"OK\", \"\", \"\", \"\", \"\"\)\;
+			else
+				echo \"EMPTY-DIFF\", \"\", \"\", \"\", \"\"\)\;
+			fi
+		done
+
+		BRANCH_NAME=trailing_${DELAY}_${C}_${START_CC_COMMIT}_fixes
+		git branch --no-track $BRANCH_NAME $START_CC_COMMIT~1
+		git checkout $BRANCH_NAME
+
+		echo insert into events values \(NULL, $(date +"%s"), \"$C\", \"$COMMIT_TYPE\", \"BEGIN-CHERRYPICK\",\'
+		git --no-pager log --format=raw $C~1..$C | sed -e "s/'/''/g"
+		echo \',\'
+		git --no-pager diff $C~1..$C | sed -e "s/'/''/g"
+		echo \'\)\;
+
+		for CC in $CC_COMMITS; do
+			CC_COMMIT_TYPE=$(get_commit_api_type $CC)
+			if [ $CC_COMMIT_TYPE == "codeonly" ]; then
+				OPTIONS="-Xpatience -Xignore-space-change"
+				# -s resolve -s octopus -s recursive -X patience -X ignore-space-change,
+				if git cherry-pick $OPTIONS $CC 2>1 >/tmp/cpick-log.txt; then
+					# echo ===+++=== cherrypicked $CC OK into $BRANCH_NAME
+					print_cherrypick_status "OK"
+				else
+					print_cherrypick_status "ERROR"
+					git cherry-pick --abort 2>&1 >/dev/null
+				fi
+			else
+				# echo ===---=== $CC type: $CC_COMMIT_TYPE, not cherrypicking into $BRANCH_NAME
+				print_cherrypick_status "SKIP"
+			fi
+		done
+		echo insert into events values \(NULL, $(date +"%s"), \"$C\", \"$COMMIT_TYPE\", \"END-CHERRYPICK\",\'
+		git --no-pager log --format=raw $C~1..$C | sed -e "s/'/''/g"
+		echo \',\'
+		git --no-pager diff $C~1..$C | sed -e "s/'/''/g"
+		echo \'\)\;
+
+	fi
+exit 
+
+

@@ -1,0 +1,36 @@
+#!/bin/bash
+# set -eux
+set -eu
+
+export TRVPP_ROOT_DIR=$(pwd)
+export TRVPP_LOGS="${TRVPP_ROOT_DIR}/logs"
+export TRVPP_REPO_ROOT="${TRVPP_ROOT_DIR}/vpp-check"
+export TRVPP_REPO="${TRVPP_ROOT_DIR}/vpp-check/vpp"
+
+
+rm -rf ${TRVPP_LOGS}
+mkdir ${TRVPP_LOGS}
+rm -rf ${TRVPP_REPO_ROOT}
+mkdir ${TRVPP_REPO_ROOT}
+cd ${TRVPP_REPO_ROOT}
+git clone ../vpp
+cd vpp
+
+REV_LIST=$(git rev-list v19.04-rc0..origin/master)
+# echo $REV_LIST
+# REV_LIST="4e8a83183e9a381d6c44fa3b94faf735d536e811"
+# REV_LIST="a069762e8e67f2acb6de612ece01666b1c350473"
+
+for C in $REV_LIST; do
+# for DELAY in 14 28 56 98; do
+# for DELAY in 14 21 28;  do
+for DELAY in 14 21 28 35 42 49 56;  do
+# for DELAY in 14;  do
+        echo log-$C-$DELAY >> ${TRVPP_LOGS}/all-log.txt
+	echo insert into batches values \(NULL, $(date +"%s"), \"$C\", $DELAY, \"log-$C-$DELAY\"\)\; >>${TRVPP_LOGS}/all-logs-ts.txt
+	../../run-one-trailing $C $DELAY >${TRVPP_LOGS}/log-${C}-$DELAY
+done
+done
+
+
+
