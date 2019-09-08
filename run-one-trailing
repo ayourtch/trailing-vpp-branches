@@ -128,19 +128,26 @@ DELAY=$2
 
 		for CC in $CC_COMMITS; do
 			CC_COMMIT_TYPE=$(get_commit_api_type $CC)
+			OPTIONS="-Xpatience -Xignore-space-change"
 			if [ $CC_COMMIT_TYPE == "codeonly" ]; then
-				OPTIONS="-Xpatience -Xignore-space-change"
 				# -s resolve -s octopus -s recursive -X patience -X ignore-space-change,
-				if git cherry-pick $OPTIONS $CC 2>1 >/tmp/cpick-log.txt; then
+				if git cherry-pick $OPTIONS $CC 2>/tmp/cpick-log.txt >/tmp/cpick-log.txt; then
 					# echo ===+++=== cherrypicked $CC OK into $BRANCH_NAME
 					print_cherrypick_status "OK"
 				else
 					print_cherrypick_status "ERROR"
-					git cherry-pick --abort 2>&1 >/dev/null
+					git cherry-pick --abort 2>/dev/null >/dev/null
 				fi
 			else
 				# echo ===---=== $CC type: $CC_COMMIT_TYPE, not cherrypicking into $BRANCH_NAME
-				print_cherrypick_status "SKIP"
+				if git cherry-pick $OPTIONS $CC 2>/tmp/cpick-log.txt >/tmp/cpick-log.txt; then
+					print_cherrypick_status "SKIP-OK"
+					# undo the successful cherry-pick
+					git reset --hard HEAD~1 2>/dev/null >/dev/null
+				else
+					print_cherrypick_status "SKIP-ERROR"
+					git cherry-pick --abort 2>/dev/null >/dev/null
+				fi
 			fi
 		done
 		echo insert into events values \(NULL, $(date +"%s"), \"$C\", \"$COMMIT_TYPE\", \"END-CHERRYPICK\",\'
