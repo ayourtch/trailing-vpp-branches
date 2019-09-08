@@ -96,7 +96,7 @@ DELAY=$2
 		TIMELIMIT=$(git log --format=raw $C~1..$C | grep committer | awk '{i=NF-1; j=($i-3600*24*'$DELAY'); printf "%s", j; }')
 		CC_COMMITS=$(git rev-list --reverse --after=$TIMELIMIT $C)
 		START_CC_COMMIT=$(echo ${CC_COMMITS} | awk '{ print $1 }')
-		echo ${CC_COMMITS} 1>&2 
+		# echo ${CC_COMMITS} 1>&2
 		git checkout ${START_CC_COMMIT}~1
 		git branch --no-track trailing_${DELAY}_${C}_${START_CC_COMMIT}_nofix $START_CC_COMMIT~1
 		git branch --no-track trailing_${DELAY}_${C}_${START_CC_COMMIT}_allin $START_CC_COMMIT~1
