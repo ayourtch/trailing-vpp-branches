@@ -26,9 +26,10 @@ for C in $REV_LIST; do
 # for DELAY in 14 21 28;  do
 for DELAY in 14 21 28 35 42 49 56;  do
 # for DELAY in 14;  do
-        echo log-$C-$DELAY >> ${TRVPP_LOGS}/all-log.txt
 	echo insert into batches values \(NULL, $(date +"%s"), \"$C\", $DELAY, \"log-$C-$DELAY\"\)\; >>${TRVPP_LOGS}/all-logs-ts.txt
 	../../run-one-trailing $C $DELAY >${TRVPP_LOGS}/log-${C}-$DELAY
+	# the log print is here to ensure the logfile is done - this makes import transactional
+        echo log-$C-$DELAY >> ${TRVPP_LOGS}/all-log.txt
 done
 done
 
